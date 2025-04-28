@@ -3,11 +3,17 @@
         xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
         xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
-    https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.6.xsd">
+        https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.6.xsd">
 
     <changeSet id="1" author="Greem4">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <tableExists tableName="attendance_records"/>
+            </not>
+        </preConditions>
+
         <createTable tableName="attendance_records">
-            <column name="id" type="BIGSERIAL">
+            <column name="id" type="BIGINT" autoIncrement="true">
                 <constraints primaryKey="true" nullable="false"/>
             </column>
             <column name="person_name" type="VARCHAR(255)">
