@@ -5,6 +5,8 @@ target/
 !**/src/test/**/target/
 logs
 .env
+neiro_pg_data
+neiro_postgres
 
 ### STS ###
 .apt_generated
