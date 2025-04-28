@@ -4,238 +4,184 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import ru.greemlab.neirocalendarv2.domain.dto.AttendanceRecordDto;
-import ru.greemlab.neirocalendarv2.domain.dto.ChildSummaryDto;
-import ru.greemlab.neirocalendarv2.domain.dto.DaySummaryDto;
-import ru.greemlab.neirocalendarv2.domain.dto.MonthSummaryDto;
-import ru.greemlab.neirocalendarv2.domain.entity.AttendanceRecord;
-import ru.greemlab.neirocalendarv2.mapper.UserAttendanceRecordMap;
+import ru.greemlab.neirocalendarv2.domain.dto.*;
+import ru.greemlab.neirocalendarv2.mapper.AttendanceRecordMapper;
 import ru.greemlab.neirocalendarv2.repository.AttendanceRecordRepository;
 
 import java.time.LocalDate;
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.List;
-import java.util.Map;
+import java.time.Month;
+import java.time.format.TextStyle;
+import java.util.*;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
+/**
+ * Сервис для работы с календарём посещений и формирования финансовых отчётов.
+ */
 @Slf4j
 @Service
 @RequiredArgsConstructor
+@Transactional(readOnly = true)
 public class CalendarService {
-
-    /** Цена одного посещения */
-    private static final int COST_PER_ATTENDANCE = 1250;
+    private static final int COST_PER_ATTENDANCE = 1_250;
+    private static final int TAX_AMOUNT = 6_500;
 
     private final AttendanceRecordRepository repository;
-    private final UserAttendanceRecordMap mapper;
+    private final AttendanceRecordMapper mapper;
 
-    /**
-     * Создать или обновить запись о посещении.
-     * @param dto DTO записи о посещении
-     */
+    /** Создание или обновление записи посещения. */
     @Transactional
     public void saveAttendance(AttendanceRecordDto dto) {
-        AttendanceRecord entity;
-        if (dto.id() != null) {
-            entity = repository.findById(dto.id()).orElse(new AttendanceRecord());
-        } else {
-            entity = new AttendanceRecord();
-        }
-
-        entity.setPersonName(dto.personName());
-        entity.setVisitDate(dto.visitDate());
-        entity.setAttended(Boolean.TRUE.equals(dto.attended()));
-
-        var saved = repository.save(entity);
-        mapper.toDto(saved);
+        repository.save(mapper.toEntity(dto));
     }
 
-    /**
-     * Создать пустые записи посещений на 1 месяц вперёд с интервалом в 1 неделю.
-     * @param personName Имя человека
-     * @param startDate Дата начала
-     */
+    /** Удаление записи по идентификатору. */
     @Transactional
-    public void saveAttendanceFor3Month(String personName, LocalDate startDate) {
-        var endDate = startDate.plusMonths(1);
-        var current = startDate;
+    public void deleteAttendance(Long id) {
+        repository.deleteById(id);
+    }
 
-        while (!current.isAfter(endDate)) {
-            var dto = new AttendanceRecordDto(null, personName, current, false);
-            saveAttendance(dto);
-            current = current.plusWeeks(1);
+    /** Обновление статуса посещения. */
+    @Transactional
+    public void updateAttendance(Long id, boolean attended) {
+        repository.findById(id)
+                .ifPresent(record -> {
+                    record.setAttended(attended);
+                    repository.save(record);
+                });
+    }
+
+    /** Создаёт пустые записи на весь месяц с интервалом 1 неделя. */
+    @Transactional
+    public void initMonthlySchedule(String person, LocalDate startDate) {
+        LocalDate endOfMonth = startDate.withDayOfMonth(startDate.lengthOfMonth());
+        for (LocalDate d = startDate; !d.isAfter(endOfMonth); d = d.plusWeeks(1)) {
+            saveAttendance(new AttendanceRecordDto(null, person, d, false));
         }
     }
 
-    /**
-     * Отметить запись как присутствие.
-     * @param id Идентификатор записи
-     */
-    @Transactional
-    public void markAttendanceTrue(Long id) {
-        setAttendance(id, true);
-    }
-
-    /**
-     * Отметить запись как отсутствие.
-     * @param id Идентификатор записи
-     */
-    @Transactional
-    public void markAttendanceFalse(Long id) {
-        setAttendance(id, false);
-    }
-
-    /**
-     * Удалить запись о посещении по ID.
-     * @param recordId Идентификатор записи
-     */
-    @Transactional
-    public void deleteAttendance(Long recordId) {
-        repository.deleteById(recordId);
-    }
-
-    /**
-     * Получить список записей о посещении за указанный период.
-     * @param start Начальная дата (включительно)
-     * @param end Конечная дата (включительно)
-     * @return Список записей
-     */
-    @Transactional(readOnly = true)
+    /** Получить записи между датами включительно. */
     public List<AttendanceRecordDto> getRecordsBetween(LocalDate start, LocalDate end) {
-        return repository.findByVisitDateBetween(start, end)
-                .stream()
+        return repository.findBetween(start, end).stream()
                 .map(mapper::toDto)
-                .toList();
+                .collect(Collectors.toList());
     }
 
-    /**
-     * Рассчитать общую стоимость всех посещений за период.
-     * Учитываются только записи с attended = true.
-     * @param start Начальная дата
-     * @param end Конечная дата
-     * @return Общая стоимость
-     */
-    @Transactional(readOnly = true)
+    /** Общая стоимость посещений за период (учитываются только явки). */
     public int calculateTotalCost(LocalDate start, LocalDate end) {
-        var list = getRecordsBetween(start, end);
-        var sum = 0;
-        for (var record : list) {
-            if (Boolean.TRUE.equals(record.attended())) {
-                sum += COST_PER_ATTENDANCE;
-            }
-        }
-        return sum;
+        long count = getRecordsBetween(start, end).stream()
+                .filter(r -> Boolean.TRUE.equals(r.attended()))
+                .count();
+        return Math.toIntExact(count * COST_PER_ATTENDANCE);
     }
 
-    /**
-     * Получить ежедневные сводки посещений за указанный период.
-     * @param start Начальная дата
-     * @param end Конечная дата
-     * @return Список дневных сводок
-     */
-    @Transactional(readOnly = true)
+    /** Ежедневные сводки: число визитов и заработок по дню. */
     public List<DaySummaryDto> getDailySummaries(LocalDate start, LocalDate end) {
-        var records = getRecordsBetween(start, end);
+        return getRecordsBetween(start, end).stream()
+                .collect(Collectors.groupingBy(AttendanceRecordDto::visitDate))
+                .entrySet().stream()
+                .map(e -> {
+                    int visits = e.getValue().size();
+                    int attended = (int) e.getValue().stream().filter(AttendanceRecordDto::attended).count();
+                    return new DaySummaryDto(e.getKey(), visits, attended, attended * COST_PER_ATTENDANCE);
+                })
+                .sorted(Comparator.comparing(DaySummaryDto::date))
+                .collect(Collectors.toList());
+    }
 
-        var dailyRecords = records.stream()
-                .collect(Collectors.groupingBy(AttendanceRecordDto::visitDate));
+    /** Формирует месячную сводку по посещениям и финансам. */
+    public FinancialReportDto getMonthlyFinancialReport(int year, int month, LocalDate pivot) {
+        LocalDate start = LocalDate.of(year, month, 1);
+        LocalDate end = start.withDayOfMonth(start.lengthOfMonth());
+        LocalDate today = Optional.ofNullable(pivot).orElse(LocalDate.now());
 
-        List<DaySummaryDto> result = new ArrayList<>();
-        for (Map.Entry<LocalDate, List<AttendanceRecordDto>> entry : dailyRecords.entrySet()) {
-            var all = entry.getValue().size();
-            var attendedCount = (int) entry.getValue().stream()
-                    .filter(r -> Boolean.TRUE.equals(r.attended()))
-                    .count();
-            var earnings = attendedCount * COST_PER_ATTENDANCE;
-            result.add(new DaySummaryDto(entry.getKey(), all, attendedCount, earnings));
+        List<AttendanceRecordDto> allRecords = getRecordsBetween(start, end);
+        int total = allRecords.size();
+        int completed = countBy(allRecords, r -> !r.visitDate().isAfter(today) && r.attended());
+        int missed = countBy(allRecords, r -> !r.visitDate().isAfter(today) && !r.attended());
+        int future = countBy(allRecords, r -> r.visitDate().isAfter(today));
+
+        int totalRevenue = total * COST_PER_ATTENDANCE;
+        int earnedRevenue = completed * COST_PER_ATTENDANCE;
+        int missedRevenue = missed * COST_PER_ATTENDANCE;
+        int futureRevenue = future * COST_PER_ATTENDANCE;
+
+        int grossExpected = earnedRevenue + futureRevenue;
+        int netExpected = grossExpected - TAX_AMOUNT;
+
+        return new FinancialReportDto(
+                year, month,
+                total, totalRevenue,
+                completed, earnedRevenue,
+                missed, missedRevenue,
+                future, futureRevenue,
+                grossExpected, TAX_AMOUNT, netExpected,
+                missedRevenue
+        );
+    }
+
+    /** Подготовка данных для отображения календаря. */
+    public CalendarResponseDto prepareCalendarData(Integer year, Integer month) {
+        MonthContext ctx = monthContext(year, month);
+        Map<LocalDate, List<AttendanceRecordDto>> byDate = getRecordsBetween(
+                ctx.startOfMonth(), ctx.endOfMonth())
+                .stream().collect(Collectors.groupingBy(AttendanceRecordDto::visitDate));
+
+        List<List<DayCellDto>> weeks = buildCalendarGrid(ctx.year(), ctx.month(), byDate);
+        long attendedCount = byDate.values().stream()
+                .flatMap(Collection::stream)
+                .filter(AttendanceRecordDto::attended)
+                .count();
+
+        return CalendarResponseDto.builder()
+                .year(ctx.year())
+                .month(ctx.month())
+                .weeks(weeks)
+                .monthNames(monthNames())
+                .attendedCount(attendedCount)
+                .totalCost(calculateTotalCost(
+                        ctx.startOfMonth(), ctx.endOfMonth()))
+                .build();
+    }
+
+    // Вспомогательные методы
+    private int countBy(List<AttendanceRecordDto> list, Predicate<AttendanceRecordDto> filter) {
+        return (int) list.stream().filter(filter).count();
+    }
+
+    private static MonthContext monthContext(Integer year, Integer month) {
+        LocalDate now = LocalDate.now();
+        int y = (year == null ? now.getYear() : year);
+        int m = (month == null ? now.getMonthValue() : month);
+        LocalDate start = LocalDate.of(y, m, 1);
+        return new MonthContext(y, m, start, start.withDayOfMonth(start.lengthOfMonth()));
+    }
+
+    private List<List<DayCellDto>> buildCalendarGrid(int year, int month,
+                                                     Map<LocalDate, List<AttendanceRecordDto>> map) {
+        LocalDate firstOfMonth = LocalDate.of(year, month, 1);
+        int shift = firstOfMonth.getDayOfWeek().getValue() - 1;
+        LocalDate gridStart = firstOfMonth.minusDays(shift);
+
+        return IntStream.range(0, 6)
+                .mapToObj(week -> IntStream.range(0, 7)
+                        .mapToObj(day -> {
+                            LocalDate date = gridStart.plusDays(week * 7L + day);
+                            boolean inMonth = date.getMonthValue() == month;
+                            return new DayCellDto(date, inMonth, map.getOrDefault(date, List.of()));
+                        })
+                        .collect(Collectors.toList())
+                )
+                .collect(Collectors.toList());
+    }
+
+    private LinkedHashMap<Integer, String> monthNames() {
+        LinkedHashMap<Integer, String> map = new LinkedHashMap<>();
+        for (Month m : Month.values()) {
+            String name = m.getDisplayName(TextStyle.FULL_STANDALONE, Locale.forLanguageTag("ru-RU"));
+            map.put(m.getValue(), Character.toUpperCase(name.charAt(0)) + name.substring(1));
         }
-        result.sort(Comparator.comparing(DaySummaryDto::date));
-        return result;
-    }
-
-    /**
-     * Получить сводку по месяцу.
-     * @param year Год
-     * @param month Месяц (1-12)
-     * @param pivot Опорная дата для разделения прошлых и будущих посещений
-     * @return Месячная сводка
-     */
-    @Transactional(readOnly = true)
-    public MonthSummaryDto getMonthSummary(int year, int month, LocalDate pivot) {
-        var p = (pivot == null) ? LocalDate.now() : pivot;
-        var start = LocalDate.of(year, month, 1);
-        var end = start.withDayOfMonth(start.lengthOfMonth());
-
-        var list = getRecordsBetween(start, end);
-
-        var total = list.size();
-        var completed = count(list, r -> !r.visitDate().isAfter(p) && r.attended());
-        var missed = count(list, r -> !r.visitDate().isAfter(p) && !r.attended());
-        var future = count(list, r -> r.visitDate().isAfter(p));
-
-        var costTotal = total * COST_PER_ATTENDANCE;
-        var costEarned = completed * COST_PER_ATTENDANCE;
-        var costMissed = missed * COST_PER_ATTENDANCE;
-        var costPossible = costEarned + future * COST_PER_ATTENDANCE;
-
-        Map<String, List<AttendanceRecordDto>> byChild = list.stream()
-                .collect(Collectors.groupingBy(AttendanceRecordDto::personName));
-
-        List<ChildSummaryDto> children = byChild.entrySet().stream()
-                .map(e -> childSummary(e.getKey(), e.getValue(), p))
-                .sorted(Comparator.comparing(ChildSummaryDto::name))
-                .toList();
-
-        return new MonthSummaryDto(year, month,
-                total, completed, missed, future,
-                costTotal, costEarned, costMissed, costPossible,
-                children
-        );
-    }
-
-    /**
-     * Построить краткую сводку для ребёнка.
-     * @param name Имя ребёнка
-     * @param recs Список посещений
-     * @param p Опорная дата
-     * @return Сводка по ребёнку
-     */
-    private ChildSummaryDto childSummary(String name, List<AttendanceRecordDto> recs, LocalDate p) {
-        List<LocalDate> att = recs.stream()
-                .filter(r -> r.visitDate().isAfter(p) && r.attended())
-                .map(AttendanceRecordDto::visitDate).sorted().toList();
-        List<LocalDate> mis = recs.stream()
-                .filter(r -> r.visitDate().isAfter(p) && !r.attended())
-                .map(AttendanceRecordDto::visitDate).sorted().toList();
-
-        return new ChildSummaryDto(
-                name, att, mis,
-                att.size() * COST_PER_ATTENDANCE,
-                mis.size() * COST_PER_ATTENDANCE
-        );
-    }
-
-    /**
-     * Подсчитать количество записей, удовлетворяющих условию.
-     * @param l Список записей
-     * @param p Условие фильтрации
-     * @return Количество подходящих записей
-     */
-    private int count(List<AttendanceRecordDto> l, Predicate<AttendanceRecordDto> p) {
-        return (int) l.stream().filter(p).count();
-    }
-
-    /**
-     * Установить статус посещения для записи.
-     * @param id Идентификатор записи
-     * @param value Статус посещения (true/false)
-     */
-    private void setAttendance(Long id, boolean value) {
-        repository.findById(id).ifPresent(r -> {
-            r.setAttended(value);
-            repository.save(r);
-        });
+        return map;
     }
 }

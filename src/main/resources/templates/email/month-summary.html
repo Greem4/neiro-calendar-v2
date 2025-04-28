@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="ru" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8"/>
+    <style>
+        body{font-family:system-ui,sans-serif;font-size:14px;color:#111}
+        h1{text-align:center}
+        table{width:100%;border-collapse:collapse;margin-top:1rem}
+        th,td{border:1px solid #ddd;padding:6px 8px;text-align:left}
+        th{background:#f0f0f0}
+        .money{text-align:right}
+        .missed{color:#d9534f;font-weight:600}
+    </style>
+</head>
+<body>
+<h1>Отчёт за <span th:text="${summary.monthNameRu()}"></span> <span th:text="${summary.year}"></span></h1>
+
+<p>
+    Запланировано: <b th:text="${summary.lessonsTotal}"/> &nbsp;|&nbsp;
+    Прошло: <b th:text="${summary.lessonsCompleted}"/> &nbsp;|&nbsp;
+    Отменено: <b th:text="${summary.lessonsMissed}"/>
+</p>
+
+<p>
+    Потенциал: <b th:text="${#numbers.formatInteger(summary.costTotal)} + ' ₽'"/> &nbsp;|&nbsp;
+    Получено: <b th:text="${#numbers.formatInteger(summary.costEarned)} + ' ₽'"/> &nbsp;|&nbsp;
+    <span class="missed">Недополучено: <b th:text="${#numbers.formatInteger(summary.costMissed)} + ' ₽'"/></span> &nbsp;|&nbsp;
+    Возможный доход: <b th:text="${#numbers.formatInteger(summary.costPossible)} + ' ₽'"/>
+</p>
+
+<table>
+    <thead>
+    <tr>
+        <th>Ребёнок</th>
+        <th>Был&nbsp;(даты)</th>
+        <th>Не&nbsp;был&nbsp;(даты)</th>
+        <th class="money">Денег&nbsp;принёс</th>
+        <th class="money">Недополучено</th>
+    </tr>
+    </thead>
+    <tbody>
+    <tr th:each="c : ${summary.children}">
+        <td th:text="${c.name}"/>
+        <td th:text="${#strings.arrayJoin(c.datesAttended,' , ','dd.MM')}"/>
+        <td th:text="${#strings.arrayJoin(c.datesMissed,' , ','dd.MM')}"/>
+        <td class="money" th:text="${#numbers.formatInteger(c.costEarned)} + ' ₽'"/>
+        <td class="money missed" th:text="${#numbers.formatInteger(c.costMissed)} + ' ₽'"/>
+    </tr>
+    </tbody>
+</table>
+</body>
+</html>

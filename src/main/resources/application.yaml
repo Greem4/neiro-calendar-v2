@@ -1,12 +1,13 @@
+#app:
+#  mail:
+#    to: ${MAIL_TO}
+
 spring:
   datasource:
     url: ${DB_URL}
     username: ${DB_USER}
     password: ${DB_PASS}
     driver-class-name: org.postgresql.Driver
-
-  liquibase:
-    change-log: classpath:/db/changelog/db.changelog-master.xml
 
   jpa:
     properties:
@@ -15,6 +16,27 @@ spring:
     hibernate:
       ddl-auto: none
     open-in-view: false
+
+  liquibase:
+    change-log: classpath:/db/changelog/db.changelog-master.xml
+
+#  mail:
+#    host: smtp.beget.com
+#    port: 465
+#    username: ${MAIL_USERNAME}
+#    password: ${MAIL_PASSWORD}
+#    protocol: smtp
+#    properties:
+#      mail:
+#        smtp:
+#          auth: true
+#          starttls.enable: true
+#          from: ${MAIL_SET_FROM}
+#          ssl.enable: true
+#          connection timeout: 5000
+#          timeout: 5000
+#          write timeout: 5000
+#      default-encoding: UTF-8
 
   config:
     import: optional:file:.env[.properties]
