@@ -12,7 +12,6 @@ import java.time.LocalDate;
 import java.time.Month;
 import java.time.format.TextStyle;
 import java.util.*;
-import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
@@ -30,19 +29,25 @@ public class CalendarService {
     private final AttendanceRecordRepository repository;
     private final AttendanceRecordMapper mapper;
 
-    /** Создание или обновление записи посещения. */
+    /**
+     * Создание или обновление записи посещения.
+     */
     @Transactional
     public void saveAttendance(AttendanceRecordDto dto) {
         repository.save(mapper.toEntity(dto));
     }
 
-    /** Удаление записи по идентификатору. */
+    /**
+     * Удаление записи по идентификатору.
+     */
     @Transactional
     public void deleteAttendance(Long id) {
         repository.deleteById(id);
     }
 
-    /** Обновление статуса посещения. */
+    /**
+     * Обновление статуса посещения.
+     */
     @Transactional
     public void updateAttendance(Long id, boolean attended) {
         repository.findById(id)
@@ -52,7 +57,9 @@ public class CalendarService {
                 });
     }
 
-    /** Создаёт пустые записи на весь месяц с интервалом 1 неделя. */
+    /**
+     * Создаёт пустые записи на весь месяц с интервалом 1 неделя.
+     */
     @Transactional
     public void initMonthlySchedule(String person, LocalDate startDate) {
         LocalDate endOfMonth = startDate.withDayOfMonth(startDate.lengthOfMonth());
@@ -61,14 +68,18 @@ public class CalendarService {
         }
     }
 
-    /** Получить записи между датами включительно. */
+    /**
+     * Получить записи между датами включительно.
+     */
     public List<AttendanceRecordDto> getRecordsBetween(LocalDate start, LocalDate end) {
         return repository.findBetween(start, end).stream()
                 .map(mapper::toDto)
                 .collect(Collectors.toList());
     }
 
-    /** Общая стоимость посещений за период (учитываются только явки). */
+    /**
+     * Общая стоимость посещений за период (учитываются только явки).
+     */
     public int calculateTotalCost(LocalDate start, LocalDate end) {
         long count = getRecordsBetween(start, end).stream()
                 .filter(r -> Boolean.TRUE.equals(r.attended()))
@@ -76,7 +87,9 @@ public class CalendarService {
         return Math.toIntExact(count * COST_PER_ATTENDANCE);
     }
 
-    /** Ежедневные сводки: число визитов и заработок по дню. */
+    /**
+     * Ежедневные сводки: число визитов и заработок по дню.
+     */
     public List<DaySummaryDto> getDailySummaries(LocalDate start, LocalDate end) {
         return getRecordsBetween(start, end).stream()
                 .collect(Collectors.groupingBy(AttendanceRecordDto::visitDate))
@@ -90,17 +103,32 @@ public class CalendarService {
                 .collect(Collectors.toList());
     }
 
-    /** Формирует месячную сводку по посещениям и финансам. */
+    /**
+     * Формирует месячную сводку по посещениям и финансам.
+     */
     public FinancialReportDto getMonthlyFinancialReport(int year, int month, LocalDate pivot) {
+        // 1) Чёткие границы одного месяца
         LocalDate start = LocalDate.of(year, month, 1);
         LocalDate end = start.withDayOfMonth(start.lengthOfMonth());
         LocalDate today = Optional.ofNullable(pivot).orElse(LocalDate.now());
 
-        List<AttendanceRecordDto> allRecords = getRecordsBetween(start, end);
-        int total = allRecords.size();
-        int completed = countBy(allRecords, r -> !r.visitDate().isAfter(today) && r.attended());
-        int missed = countBy(allRecords, r -> !r.visitDate().isAfter(today) && !r.attended());
-        int future = countBy(allRecords, r -> r.visitDate().isAfter(today));
+        // 2) Берём записи строго за этот месяц
+        List<AttendanceRecordDto> allRecords = getRecordsBetween(start, end).stream()
+                .filter(r -> r.visitDate().getMonthValue() == month)
+                .toList();
+
+        // 3) Считаем completed/missed/future только внутри этого списка
+        var total = allRecords.size();
+        var completed = (int) allRecords.stream()
+                .filter(r -> !r.visitDate().isAfter(today) && r.attended())
+                .count();
+        var missed = (int) allRecords.stream()
+                .filter(r -> !r.visitDate().isAfter(today) && !r.attended())
+                .count();
+        var future = (int) allRecords.stream()
+                .filter(r -> r.visitDate().isAfter(today))
+                .count();
+
 
         int totalRevenue = total * COST_PER_ATTENDANCE;
         int earnedRevenue = completed * COST_PER_ATTENDANCE;
@@ -121,7 +149,9 @@ public class CalendarService {
         );
     }
 
-    /** Подготовка данных для отображения календаря. */
+    /**
+     * Подготовка данных для отображения календаря.
+     */
     public CalendarResponseDto prepareCalendarData(Integer year, Integer month) {
         MonthContext ctx = monthContext(year, month);
         Map<LocalDate, List<AttendanceRecordDto>> byDate = getRecordsBetween(
@@ -143,11 +173,6 @@ public class CalendarService {
                 .totalCost(calculateTotalCost(
                         ctx.startOfMonth(), ctx.endOfMonth()))
                 .build();
-    }
-
-    // Вспомогательные методы
-    private int countBy(List<AttendanceRecordDto> list, Predicate<AttendanceRecordDto> filter) {
-        return (int) list.stream().filter(filter).count();
     }
 
     private static MonthContext monthContext(Integer year, Integer month) {
