@@ -14,16 +14,15 @@ import java.util.List;
  * save, findAll, findById, delete и др.
  */
 public interface AttendanceRecordRepository extends JpaRepository<AttendanceRecord, Long> {
-
     /**
-     * Находим все записи на конкретную дату.
+     * Возвращает записи в диапазоне дат (включительно), отсортированные по дате и ID.
      */
-    List<AttendanceRecord> findByVisitDate(LocalDate date);
-
-    /**
-     * Находим все записи в заданном интервале (включительно).
-     */
-    @Query("SELECT r FROM AttendanceRecord r WHERE r.visitDate >= :start AND r.visitDate <= :end ORDER BY r.id ASC")
-    List<AttendanceRecord> findByVisitDateBetween(@Param("start") LocalDate start, @Param("end") LocalDate end);
+    @Query("""
+            SELECT r
+              FROM AttendanceRecord r
+             WHERE r.visitDate BETWEEN :start AND :end
+             ORDER BY r.visitDate, r.id
+            """)
+    List<AttendanceRecord> findBetween(@Param("start") LocalDate start, @Param("end") LocalDate end);
 
 }

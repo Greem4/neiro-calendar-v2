@@ -4,147 +4,170 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import ru.greemlab.neirocalendarv2.domain.dto.AttendanceRecordDto;
-import ru.greemlab.neirocalendarv2.domain.dto.DaySummaryDto;
-import ru.greemlab.neirocalendarv2.domain.entity.AttendanceRecord;
-import ru.greemlab.neirocalendarv2.mapper.UserAttendanceRecordMap;
+import ru.greemlab.neirocalendarv2.domain.dto.*;
+import ru.greemlab.neirocalendarv2.mapper.AttendanceRecordMapper;
 import ru.greemlab.neirocalendarv2.repository.AttendanceRecordRepository;
 
 import java.time.LocalDate;
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.List;
-import java.util.Map;
+import java.time.Month;
+import java.time.format.TextStyle;
+import java.util.*;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
+/**
+ * Сервис для работы с календарём посещений и формирования финансовых отчётов.
+ */
 @Slf4j
 @Service
 @RequiredArgsConstructor
+@Transactional(readOnly = true)
 public class CalendarService {
-
-    /**
-     * Цена одного посещения
-     */
-    private static final int COST_PER_ATTENDANCE = 1250;
+    private static final int COST_PER_ATTENDANCE = 1_250;
+    private static final int TAX_AMOUNT = 6_500;
 
     private final AttendanceRecordRepository repository;
-    private final UserAttendanceRecordMap mapper;
+    private final AttendanceRecordMapper mapper;
 
     /**
-     * Создать / обновить запись
+     * Создание или обновление записи посещения.
      */
     @Transactional
     public void saveAttendance(AttendanceRecordDto dto) {
-        AttendanceRecord entity;
-        if (dto.id() != null) {
-            // Если уже есть ID, найдём в БД, иначе создаём новый
-            entity = repository.findById(dto.id()).orElse(new AttendanceRecord());
-        } else {
-            entity = new AttendanceRecord();
+        repository.save(mapper.toEntity(dto));
+    }
+
+    /**
+     * Удаление записи по идентификатору.
+     */
+    @Transactional
+    public void deleteAttendance(Long id) {
+        repository.deleteById(id);
+    }
+
+    /**
+     * Обновление статуса посещения.
+     */
+    @Transactional
+    public void updateAttendance(Long id, boolean attended) {
+        repository.findById(id)
+                .ifPresent(record -> {
+                    record.setAttended(attended);
+                    repository.save(record);
+                });
+    }
+
+    /**
+     * Создаёт пустые записи на весь месяц с интервалом 1 неделя.
+     */
+    @Transactional
+    public void initMonthlySchedule(String person, LocalDate startDate) {
+        LocalDate endOfMonth = startDate.withDayOfMonth(startDate.lengthOfMonth());
+        for (LocalDate d = startDate; !d.isAfter(endOfMonth); d = d.plusWeeks(1)) {
+            saveAttendance(new AttendanceRecordDto(null, person, d, false));
         }
-
-        entity.setPersonName(dto.personName());
-        entity.setVisitDate(dto.visitDate());
-        entity.setAttended(dto.attended() != null ? dto.attended() : false);
-
-        var saved = repository.save(entity);
-        mapper.toDto(saved);
     }
 
     /**
-     * Создать / обновить запись на 3 месяца
+     * Получить записи между датами включительно.
      */
-    @Transactional
-    public void saveAttendanceFor3Month(String personName, LocalDate startDate) {
-        var endDate = startDate.plusMonths(1);
-        var current = startDate;
-
-        while (!current.isAfter(endDate)) {
-            var dto = new AttendanceRecordDto(null, personName, current, false);
-            saveAttendance(dto);
-            current = current.plusWeeks(1);
-        }
-    }
-
-    /**
-     * Отметить присутствие (attended = true) по ID
-     */
-    @Transactional
-    public void markAttendanceTrue(Long recordId) {
-        repository.findById(recordId).ifPresent(rec -> {
-            rec.setAttended(true);
-            repository.save(rec);
-        });
-    }
-
-    /**
-     * Отменить присутствие (attended = true) по ID
-     */
-    @Transactional
-    public void markAttendanceFalse(Long recordId) {
-        repository.findById(recordId).ifPresent(rec -> {
-            rec.setAttended(false);
-            repository.save(rec);
-        });
-    }
-
-    /**
-     * Удалить запись по ID
-     */
-    @Transactional
-    public void deleteAttendance(Long recordId) {
-        repository.deleteById(recordId);
-    }
-
-    /**
-     * Найти записи за период [start..end]
-     */
-    @Transactional(readOnly = true)
     public List<AttendanceRecordDto> getRecordsBetween(LocalDate start, LocalDate end) {
-        return repository.findByVisitDateBetween(start, end)
-                .stream()
+        return repository.findBetween(start, end).stream()
                 .map(mapper::toDto)
-                .toList();
+                .collect(Collectors.toList());
     }
 
     /**
-     * Посчитать общую сумму (только для attended = true)
+     * Общая стоимость посещений за период (учитываются только явки).
      */
-    @Transactional(readOnly = true)
     public int calculateTotalCost(LocalDate start, LocalDate end) {
-        var list = getRecordsBetween(start, end);
-        var sum = 0;
-        for (var record : list) {
-            if (Boolean.TRUE.equals(record.attended())) {
-                sum += COST_PER_ATTENDANCE;
-            }
-        }
-        return sum;
+        long count = getRecordsBetween(start, end).stream()
+                .filter(r -> Boolean.TRUE.equals(r.attended()))
+                .count();
+        return Math.toIntExact(count * COST_PER_ATTENDANCE);
     }
 
     /**
-     * Подсчитает посещения и сумму за день (только для attended = true)
+     * Ежедневные сводки: число визитов и заработок по дню.
      */
-    @Transactional(readOnly = true)
     public List<DaySummaryDto> getDailySummaries(LocalDate start, LocalDate end) {
-        // Получаем записи за период [start; end]
-        var records = getRecordsBetween(start, end);
+        return getRecordsBetween(start, end).stream()
+                .collect(Collectors.groupingBy(AttendanceRecordDto::visitDate))
+                .entrySet().stream()
+                .map(e -> {
+                    int visits = e.getValue().size();
+                    int attended = (int) e.getValue().stream().filter(AttendanceRecordDto::attended).count();
+                    return new DaySummaryDto(e.getKey(), visits, attended, attended * COST_PER_ATTENDANCE);
+                })
+                .sorted(Comparator.comparing(DaySummaryDto::date))
+                .collect(Collectors.toList());
+    }
 
-        // Группируем записи по дате и фильтруем только attended = true
-        var dailyRecords = records.stream()
+
+    /**
+     * Подготовка данных для отображения календаря.
+     */
+    public CalendarResponseDto prepareCalendarData(Integer year, Integer month) {
+        MonthContext ctx = monthContext(year, month);
+        Map<LocalDate, List<AttendanceRecordDto>> byDate = getRecordsBetween(
+                ctx.startOfMonth(), ctx.endOfMonth())
+                .stream()
                 .collect(Collectors.groupingBy(AttendanceRecordDto::visitDate));
 
-        // Собираем результаты: для каждого дня считаем количество и заработок
-        List<DaySummaryDto> result = new ArrayList<>();
-        for (Map.Entry<LocalDate, List<AttendanceRecordDto>> entry : dailyRecords.entrySet()) {
-            var all = entry.getValue().size();
-            var attendedCount = (int) entry.getValue().stream()
-                    .filter(r -> Boolean.TRUE.equals(r.attended()))
-                    .count();
-            var earnings = attendedCount * COST_PER_ATTENDANCE;
-            result.add(new DaySummaryDto(entry.getKey(), all, attendedCount, earnings));
+        List<List<DayCellDto>> weeks = buildCalendarGrid(ctx.year(), ctx.month(), byDate);
+        long attendedCount = byDate.values().stream()
+                .flatMap(Collection::stream)
+                .filter(AttendanceRecordDto::attended)
+                .count();
+
+        // рассчитываем суммы
+        int totalWithoutTax = calculateTotalCost(ctx.startOfMonth(), ctx.endOfMonth());
+        int totalWithTax    = totalWithoutTax - TAX_AMOUNT; // если налог вычитается
+
+        return CalendarResponseDto.builder()
+                .year(ctx.year())
+                .month(ctx.month())
+                .weeks(weeks)
+                .monthNames(monthNames())
+                .attendedCount(attendedCount)
+                .totalCostWithoutTax(totalWithoutTax)
+                .totalCostWithTax(totalWithTax)
+                .build();
+    }
+
+
+    private static MonthContext monthContext(Integer year, Integer month) {
+        LocalDate now = LocalDate.now();
+        int y = (year == null ? now.getYear() : year);
+        int m = (month == null ? now.getMonthValue() : month);
+        LocalDate start = LocalDate.of(y, m, 1);
+        return new MonthContext(y, m, start, start.withDayOfMonth(start.lengthOfMonth()));
+    }
+
+    private List<List<DayCellDto>> buildCalendarGrid(int year, int month,
+                                                     Map<LocalDate, List<AttendanceRecordDto>> map) {
+        LocalDate firstOfMonth = LocalDate.of(year, month, 1);
+        int shift = firstOfMonth.getDayOfWeek().getValue() - 1;
+        LocalDate gridStart = firstOfMonth.minusDays(shift);
+
+        return IntStream.range(0, 6)
+                .mapToObj(week -> IntStream.range(0, 7)
+                        .mapToObj(day -> {
+                            LocalDate date = gridStart.plusDays(week * 7L + day);
+                            boolean inMonth = date.getMonthValue() == month;
+                            return new DayCellDto(date, inMonth, map.getOrDefault(date, List.of()));
+                        })
+                        .collect(Collectors.toList())
+                )
+                .collect(Collectors.toList());
+    }
+
+    private LinkedHashMap<Integer, String> monthNames() {
+        LinkedHashMap<Integer, String> map = new LinkedHashMap<>();
+        for (Month m : Month.values()) {
+            String name = m.getDisplayName(TextStyle.FULL_STANDALONE, Locale.forLanguageTag("ru-RU"));
+            map.put(m.getValue(), Character.toUpperCase(name.charAt(0)) + name.substring(1));
         }
-        result.sort(Comparator.comparing(DaySummaryDto::date));
-        return result;
+        return map;
     }
 }

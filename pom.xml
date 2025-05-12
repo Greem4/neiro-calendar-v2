@@ -20,7 +20,8 @@
 
     <properties>
         <java.version>21</java.version>
-        <swagger.version>2.2.30</swagger.version>
+        <springdoc.version>2.5.0</springdoc.version>
+        <itextpdf.version>8.0.4</itextpdf.version>
     </properties>
 
     <dependencies>
@@ -60,9 +61,16 @@
 
         <!-- Swagger -->
         <dependency>
-            <groupId>io.swagger.core.v3</groupId>
-            <artifactId>swagger-annotations</artifactId>
-            <version>${swagger.version}</version>
+            <groupId>org.springdoc</groupId>
+            <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+            <version>${springdoc.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>com.itextpdf</groupId>
+            <artifactId>itext-core</artifactId>
+            <version>9.1.0</version>
+            <type>pom</type>
         </dependency>
 
         <!-- Test Dependencies -->
