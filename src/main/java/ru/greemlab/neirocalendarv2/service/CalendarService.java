@@ -103,51 +103,6 @@ public class CalendarService {
                 .collect(Collectors.toList());
     }
 
-    /**
-     * Формирует месячную сводку по посещениям и финансам.
-     */
-    public FinancialReportDto getMonthlyFinancialReport(int year, int month, LocalDate pivot) {
-        // 1) Чёткие границы одного месяца
-        LocalDate start = LocalDate.of(year, month, 1);
-        LocalDate end = start.withDayOfMonth(start.lengthOfMonth());
-        LocalDate today = Optional.ofNullable(pivot).orElse(LocalDate.now());
-
-        // 2) Берём записи строго за этот месяц
-        List<AttendanceRecordDto> allRecords = getRecordsBetween(start, end).stream()
-                .filter(r -> r.visitDate().getMonthValue() == month)
-                .toList();
-
-        // 3) Считаем completed/missed/future только внутри этого списка
-        var total = allRecords.size();
-        var completed = (int) allRecords.stream()
-                .filter(r -> !r.visitDate().isAfter(today) && r.attended())
-                .count();
-        var missed = (int) allRecords.stream()
-                .filter(r -> !r.visitDate().isAfter(today) && !r.attended())
-                .count();
-        var future = (int) allRecords.stream()
-                .filter(r -> r.visitDate().isAfter(today))
-                .count();
-
-
-        int totalRevenue = total * COST_PER_ATTENDANCE;
-        int earnedRevenue = completed * COST_PER_ATTENDANCE;
-        int missedRevenue = missed * COST_PER_ATTENDANCE;
-        int futureRevenue = future * COST_PER_ATTENDANCE;
-
-        int grossExpected = earnedRevenue + futureRevenue;
-        int netExpected = grossExpected - TAX_AMOUNT;
-
-        return new FinancialReportDto(
-                year, month,
-                total, totalRevenue,
-                completed, earnedRevenue,
-                missed, missedRevenue,
-                future, futureRevenue,
-                grossExpected, TAX_AMOUNT, netExpected,
-                missedRevenue
-        );
-    }
 
     /**
      * Подготовка данных для отображения календаря.
@@ -156,7 +111,8 @@ public class CalendarService {
         MonthContext ctx = monthContext(year, month);
         Map<LocalDate, List<AttendanceRecordDto>> byDate = getRecordsBetween(
                 ctx.startOfMonth(), ctx.endOfMonth())
-                .stream().collect(Collectors.groupingBy(AttendanceRecordDto::visitDate));
+                .stream()
+                .collect(Collectors.groupingBy(AttendanceRecordDto::visitDate));
 
         List<List<DayCellDto>> weeks = buildCalendarGrid(ctx.year(), ctx.month(), byDate);
         long attendedCount = byDate.values().stream()
@@ -164,16 +120,21 @@ public class CalendarService {
                 .filter(AttendanceRecordDto::attended)
                 .count();
 
+        // рассчитываем суммы
+        int totalWithoutTax = calculateTotalCost(ctx.startOfMonth(), ctx.endOfMonth());
+        int totalWithTax    = totalWithoutTax - TAX_AMOUNT; // если налог вычитается
+
         return CalendarResponseDto.builder()
                 .year(ctx.year())
                 .month(ctx.month())
                 .weeks(weeks)
                 .monthNames(monthNames())
                 .attendedCount(attendedCount)
-                .totalCost(calculateTotalCost(
-                        ctx.startOfMonth(), ctx.endOfMonth()))
+                .totalCostWithoutTax(totalWithoutTax)
+                .totalCostWithTax(totalWithTax)
                 .build();
     }
+
 
     private static MonthContext monthContext(Integer year, Integer month) {
         LocalDate now = LocalDate.now();

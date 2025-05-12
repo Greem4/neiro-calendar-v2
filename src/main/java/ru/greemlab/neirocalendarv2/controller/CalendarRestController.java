@@ -37,12 +37,6 @@ public class CalendarRestController {
         return calendarService.getDailySummaries(start, end);
     }
 
-    @GetMapping("/month-summary")
-    @Operation(summary = "Месячная сводка")
-    public FinancialReportDto getMonthSummary(@ModelAttribute MonthRequest req) {
-        return calendarService.getMonthlyFinancialReport(req.year(), req.month(), req.pivot());
-    }
-
     @PostMapping("/add")
     @Operation(summary = "Создать занятия на месяц вперёд")
     public void addAttendance(@ModelAttribute AddRecordsRequest req) {
