@@ -148,6 +148,7 @@ public class CalendarService {
         var totalWithoutTax = calculateTotalCost(ctx.startOfMonth(), ctx.endOfMonth());
         var totalWithTax    = totalWithoutTax - TAX_AMOUNT; // если налог вычитается
         var potentialProfit = calculatePotentialProfit(ctx.startOfMonth(), ctx.endOfMonth());
+        var totalCost = totalWithTax + potentialProfit;
 
 
         return CalendarResponseDto.builder()
@@ -159,6 +160,7 @@ public class CalendarService {
                 .totalCostWithoutTax(totalWithoutTax)
                 .totalCostWithTax(totalWithTax)
                 .potentialProfit(potentialProfit)
+                .totalCost(totalCost)
                 .build();
     }
 
