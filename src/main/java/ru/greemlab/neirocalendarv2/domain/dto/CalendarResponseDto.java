@@ -14,7 +14,8 @@ public record CalendarResponseDto(
         long attendedCount,
         int totalCostWithoutTax,
         int totalCostWithTax,
-        int potentialProfit
+        int potentialProfit,
+        int totalCost
 ) {
 
 }
