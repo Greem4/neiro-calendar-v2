@@ -11,7 +11,12 @@ import ru.greemlab.neirocalendarv2.repository.AttendanceRecordRepository;
 import java.time.LocalDate;
 import java.time.Month;
 import java.time.format.TextStyle;
-import java.util.*;
+import java.util.Collection;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
@@ -62,7 +67,7 @@ public class CalendarService {
      */
     @Transactional
     public void initMonthlySchedule(String person, LocalDate startDate) {
-        LocalDate endOfMonth = startDate.withDayOfMonth(startDate.lengthOfMonth());
+        var endOfMonth = startDate.withDayOfMonth(startDate.lengthOfMonth());
         for (LocalDate d = startDate; !d.isAfter(endOfMonth); d = d.plusWeeks(1)) {
             saveAttendance(new AttendanceRecordDto(null, person, d, false));
         }
@@ -81,10 +86,29 @@ public class CalendarService {
      * Общая стоимость посещений за период (учитываются только явки).
      */
     public int calculateTotalCost(LocalDate start, LocalDate end) {
-        long count = getRecordsBetween(start, end).stream()
+        var count = getRecordsBetween(start, end).stream()
                 .filter(r -> Boolean.TRUE.equals(r.attended()))
                 .count();
         return Math.toIntExact(count * COST_PER_ATTENDANCE);
+    }
+
+    /**
+     * Рассчитать возможный доход: учесть уже состоявшиеся визиты + все
+     * будущие (attended == false && дата >= сегодня)
+     */
+    public int calculatePotentialProfit(LocalDate start, LocalDate end) {
+        var today = LocalDate.now();
+        var records = getRecordsBetween(start, end);
+
+//        var happened = records.stream()
+//                .filter(AttendanceRecordDto::attended)
+//                .count();
+
+        var future = records.stream()
+                .filter(r -> !r.attended() && !r.visitDate().isBefore(today))
+                .count();
+
+        return Math.toIntExact(future * COST_PER_ATTENDANCE);
     }
 
     /**
@@ -108,21 +132,23 @@ public class CalendarService {
      * Подготовка данных для отображения календаря.
      */
     public CalendarResponseDto prepareCalendarData(Integer year, Integer month) {
-        MonthContext ctx = monthContext(year, month);
+        var ctx = monthContext(year, month);
         Map<LocalDate, List<AttendanceRecordDto>> byDate = getRecordsBetween(
                 ctx.startOfMonth(), ctx.endOfMonth())
                 .stream()
                 .collect(Collectors.groupingBy(AttendanceRecordDto::visitDate));
 
         List<List<DayCellDto>> weeks = buildCalendarGrid(ctx.year(), ctx.month(), byDate);
-        long attendedCount = byDate.values().stream()
+        var attendedCount = byDate.values().stream()
                 .flatMap(Collection::stream)
                 .filter(AttendanceRecordDto::attended)
                 .count();
 
         // рассчитываем суммы
-        int totalWithoutTax = calculateTotalCost(ctx.startOfMonth(), ctx.endOfMonth());
-        int totalWithTax    = totalWithoutTax - TAX_AMOUNT; // если налог вычитается
+        var totalWithoutTax = calculateTotalCost(ctx.startOfMonth(), ctx.endOfMonth());
+        var totalWithTax    = totalWithoutTax - TAX_AMOUNT; // если налог вычитается
+        var potentialProfit = calculatePotentialProfit(ctx.startOfMonth(), ctx.endOfMonth());
+
 
         return CalendarResponseDto.builder()
                 .year(ctx.year())
@@ -132,29 +158,30 @@ public class CalendarService {
                 .attendedCount(attendedCount)
                 .totalCostWithoutTax(totalWithoutTax)
                 .totalCostWithTax(totalWithTax)
+                .potentialProfit(potentialProfit)
                 .build();
     }
 
 
     private static MonthContext monthContext(Integer year, Integer month) {
-        LocalDate now = LocalDate.now();
-        int y = (year == null ? now.getYear() : year);
-        int m = (month == null ? now.getMonthValue() : month);
-        LocalDate start = LocalDate.of(y, m, 1);
+        var now = LocalDate.now();
+        var y = (year == null ? now.getYear() : year);
+        var m = (month == null ? now.getMonthValue() : month);
+        var start = LocalDate.of(y, m, 1);
         return new MonthContext(y, m, start, start.withDayOfMonth(start.lengthOfMonth()));
     }
 
     private List<List<DayCellDto>> buildCalendarGrid(int year, int month,
                                                      Map<LocalDate, List<AttendanceRecordDto>> map) {
-        LocalDate firstOfMonth = LocalDate.of(year, month, 1);
-        int shift = firstOfMonth.getDayOfWeek().getValue() - 1;
-        LocalDate gridStart = firstOfMonth.minusDays(shift);
+        var firstOfMonth = LocalDate.of(year, month, 1);
+        var shift = firstOfMonth.getDayOfWeek().getValue() - 1;
+        var gridStart = firstOfMonth.minusDays(shift);
 
         return IntStream.range(0, 6)
                 .mapToObj(week -> IntStream.range(0, 7)
                         .mapToObj(day -> {
-                            LocalDate date = gridStart.plusDays(week * 7L + day);
-                            boolean inMonth = date.getMonthValue() == month;
+                            var date = gridStart.plusDays(week * 7L + day);
+                            var inMonth = date.getMonthValue() == month;
                             return new DayCellDto(date, inMonth, map.getOrDefault(date, List.of()));
                         })
                         .collect(Collectors.toList())
@@ -165,7 +192,7 @@ public class CalendarService {
     private LinkedHashMap<Integer, String> monthNames() {
         LinkedHashMap<Integer, String> map = new LinkedHashMap<>();
         for (Month m : Month.values()) {
-            String name = m.getDisplayName(TextStyle.FULL_STANDALONE, Locale.forLanguageTag("ru-RU"));
+            var name = m.getDisplayName(TextStyle.FULL_STANDALONE, Locale.forLanguageTag("ru-RU"));
             map.put(m.getValue(), Character.toUpperCase(name.charAt(0)) + name.substring(1));
         }
         return map;
