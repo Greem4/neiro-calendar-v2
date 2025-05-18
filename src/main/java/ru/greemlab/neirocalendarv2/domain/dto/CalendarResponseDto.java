@@ -13,7 +13,8 @@ public record CalendarResponseDto(
         LinkedHashMap<Integer, String> monthNames,
         long attendedCount,
         int totalCostWithoutTax,
-        int totalCostWithTax
+        int totalCostWithTax,
+        int potentialProfit
 ) {
 
 }
