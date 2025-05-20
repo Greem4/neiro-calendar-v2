@@ -4,6 +4,7 @@ spring:
     user:
       name: ${SECURITY_NAME}
       password: ${SECURITY_PASS}
+      roles: ADMIN
 
   datasource:
     url: ${DB_URL}
