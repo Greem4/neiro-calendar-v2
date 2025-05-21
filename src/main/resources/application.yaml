@@ -1,10 +1,8 @@
-spring:
+jwt:
+  secret: ${JWT_SECRET}
+  ttl-min: 43200
 
-  security:
-    user:
-      name: ${SECURITY_NAME}
-      password: ${SECURITY_PASS}
-      roles: ADMIN
+spring:
 
   datasource:
     url: ${DB_URL}
