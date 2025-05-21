@@ -5,6 +5,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
+import org.springframework.lang.NonNull;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.AuthenticationProvider;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
@@ -40,16 +41,14 @@ public class SecurityConfig {
     public WebMvcConfigurer corsConfigurer() {
         return new WebMvcConfigurer() {
             @Override
-            public void addCorsMappings(CorsRegistry registry) {
+            public void addCorsMappings(@NonNull CorsRegistry registry) {
                 registry.addMapping("/**")
                         .allowedOrigins("*")
-                        .allowedMethods("GET","POST","PUT","DELETE","OPTIONS")
+                        .allowedMethods("GET","POST","PUT","DELETE","OPTIONS", "PATCH")
                         .allowedHeaders("*");
             }
         };
     }
-
-
 
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http,
@@ -73,6 +72,11 @@ public class SecurityConfig {
 
                         // 3) Логин
                         .requestMatchers(HttpMethod.POST, "/api/v1/auth/**").permitAll()
+
+                        .requestMatchers(HttpMethod.POST, "/api/v1/calendar/**").hasRole("ADMIN")
+                        .requestMatchers(HttpMethod.PUT, "/api/v1/calendar/**").hasRole("ADMIN")
+                        .requestMatchers(HttpMethod.PATCH, "/api/v1/calendar/**").hasRole("ADMIN")
+                        .requestMatchers(HttpMethod.DELETE, "/api/v1/calendar/**").hasRole("ADMIN")
 
                         // 4) Публичный календарь
                         .requestMatchers(HttpMethod.GET, "/api/v1/calendar/**").permitAll()
