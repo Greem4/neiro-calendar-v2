@@ -5,6 +5,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import ru.greemlab.neirocalendarv2.domain.dto.*;
 import ru.greemlab.neirocalendarv2.service.CalendarService;
@@ -17,7 +18,7 @@ import java.util.List;
 @RequiredArgsConstructor
 @RequestMapping("/api/v1/calendar")
 @Tag(name = "Календарь", description = "Операции управления посещаемостью")
-public class CalendarRestController {
+public class CalendarController {
 
     private final CalendarService calendarService;
 
@@ -37,6 +38,7 @@ public class CalendarRestController {
         return calendarService.getDailySummaries(start, end);
     }
 
+    @PreAuthorize("hasRole('ADMIN')")
     @PostMapping("/add")
     @Operation(summary = "Создать занятия на месяц вперёд")
     public void addAttendance(@ModelAttribute AddRecordsRequest req) {
@@ -44,12 +46,14 @@ public class CalendarRestController {
         calendarService.initMonthlySchedule(req.personName(), req.startDate());
     }
 
+    @PreAuthorize("hasRole('ADMIN')")
     @PatchMapping("/{id}")
     @Operation(summary = "Обновить посещение")
     public void updateAttendance(@PathVariable long id, @RequestBody UpdateAttendanceRequest body) {
         calendarService.updateAttendance(id, body.attended());
     }
 
+    @PreAuthorize("hasRole('ADMIN')")
     @DeleteMapping("/{id}")
     @Operation(summary = "Удалить запись")
     public void deleteAttendance(@PathVariable long id) {

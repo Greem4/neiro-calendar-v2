@@ -1,7 +1,7 @@
 services:
   db:
     image: postgres:17-alpine
-    container_name: neiro_calendar
+    container_name: neiro-calendar-db
     environment:
       POSTGRES_USER: ${DB_USER}
       POSTGRES_PASSWORD: ${DB_PASS}
@@ -17,7 +17,7 @@ services:
       - app_network
     restart: unless-stopped
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U ${DB_USER} -d neiro_calendar_db" ]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d neiro_calendar_db"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -35,6 +35,17 @@ services:
       TZ: Europe/Moscow
     ports:
       - "8085:8080"
+    networks:
+      - app_network
+    restart: unless-stopped
+
+  frontend:
+    image: greem4/neiro-front-frontend
+    container_name: neiro-calendar-frontend
+    env_file:
+      - .env
+    ports:
+      - "3001:80"
     networks:
       - app_network
     restart: unless-stopped
