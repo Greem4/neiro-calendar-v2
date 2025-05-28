@@ -1,0 +1,21 @@
+services:
+  neiro_db:
+    image: postgres:17-alpine
+    container_name: neiro-calendar-db
+    environment:
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASS}
+      POSTGRES_DB: neiro_calendar_db
+      TZ: Europe/Moscow
+      POSTGRES_INITDB_ARGS: "--locale=ru_RU.UTF-8 --lc-collate=C --encoding=UTF-8"
+    volumes:
+      - ./neiro_pg_data:/var/lib/postgresql/data
+      - ./neiro_postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    ports:
+      - "5432:5432"
+    networks:
+      - app_network
+
+networks:
+  app_network:
+    driver: bridge
