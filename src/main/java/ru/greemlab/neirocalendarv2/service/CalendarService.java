@@ -28,7 +28,7 @@ import java.util.stream.IntStream;
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class CalendarService {
-    private static final int COST_PER_ATTENDANCE = 1_250;
+    private static final int COST_PER_ATTENDANCE = 1_400;
     private static final int TAX_AMOUNT = 6_500;
 
     private final AttendanceRecordRepository repository;
