@@ -4,19 +4,22 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import ru.greemlab.neirocalendarv2.domain.dto.*;
+import ru.greemlab.neirocalendarv2.domain.dto.AttendanceRecordDto;
+import ru.greemlab.neirocalendarv2.domain.dto.CalendarResponseDto;
+import ru.greemlab.neirocalendarv2.domain.dto.DayCellDto;
+import ru.greemlab.neirocalendarv2.domain.dto.DaySummaryDto;
 import ru.greemlab.neirocalendarv2.mapper.AttendanceRecordMapper;
 import ru.greemlab.neirocalendarv2.repository.AttendanceRecordRepository;
 
 import java.time.LocalDate;
 import java.time.Month;
 import java.time.format.TextStyle;
-import java.util.Collection;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
@@ -28,6 +31,7 @@ import java.util.stream.IntStream;
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class CalendarService {
+
     private static final int COST_PER_ATTENDANCE = 1_400;
     private static final int TAX_AMOUNT = 6_500;
 
@@ -55,21 +59,30 @@ public class CalendarService {
      */
     @Transactional
     public void updateAttendance(Long id, boolean attended) {
-        repository.findById(id)
-                .ifPresent(record -> {
-                    record.setAttended(attended);
-                    repository.save(record);
-                });
+        var record = repository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("Attendance not found: " + id));
+        record.setAttended(attended);
+        repository.save(record);
     }
 
     /**
      * Создаёт пустые записи на весь месяц с интервалом 1 неделя.
+     * Защита от дублей по (person, date) в пределах месяца.
      */
     @Transactional
     public void initMonthlySchedule(String person, LocalDate startDate) {
         var endOfMonth = startDate.withDayOfMonth(startDate.lengthOfMonth());
+        var monthStart = startDate.withDayOfMonth(1);
+
+        Set<LocalDate> existingDates = getRecordsBetween(monthStart, endOfMonth).stream()
+                .filter(r -> person.equals(r.personName()))
+                .map(AttendanceRecordDto::visitDate)
+                .collect(Collectors.toSet());
+
         for (LocalDate d = startDate; !d.isAfter(endOfMonth); d = d.plusWeeks(1)) {
-            saveAttendance(new AttendanceRecordDto(null, person, d, false));
+            if (!existingDates.contains(d)) {
+                saveAttendance(new AttendanceRecordDto(null, person, d, false));
+            }
         }
     }
 
@@ -86,28 +99,21 @@ public class CalendarService {
      * Общая стоимость посещений за период (учитываются только явки).
      */
     public int calculateTotalCost(LocalDate start, LocalDate end) {
-        var count = getRecordsBetween(start, end).stream()
+        long count = getRecordsBetween(start, end).stream()
                 .filter(r -> Boolean.TRUE.equals(r.attended()))
                 .count();
         return Math.toIntExact(count * COST_PER_ATTENDANCE);
     }
 
     /**
-     * Рассчитать возможный доход: учесть уже состоявшиеся визиты + все
-     * будущие (attended == false && дата >= сегодня)
+     * Потенциальный доход вперёд: только будущие незакрытые визиты
+     * (attended != true && дата >= сегодня).
      */
     public int calculatePotentialProfit(LocalDate start, LocalDate end) {
         var today = LocalDate.now();
-        var records = getRecordsBetween(start, end);
-
-//        var happened = records.stream()
-//                .filter(AttendanceRecordDto::attended)
-//                .count();
-
-        var future = records.stream()
-                .filter(r -> !r.attended() && !r.visitDate().isBefore(today))
+        long future = getRecordsBetween(start, end).stream()
+                .filter(r -> !Boolean.TRUE.equals(r.attended()) && !r.visitDate().isBefore(today))
                 .count();
-
         return Math.toIntExact(future * COST_PER_ATTENDANCE);
     }
 
@@ -120,36 +126,37 @@ public class CalendarService {
                 .entrySet().stream()
                 .map(e -> {
                     int visits = e.getValue().size();
-                    int attended = (int) e.getValue().stream().filter(AttendanceRecordDto::attended).count();
+                    int attended = (int) e.getValue().stream()
+                            .filter(r -> Boolean.TRUE.equals(r.attended()))
+                            .count();
                     return new DaySummaryDto(e.getKey(), visits, attended, attended * COST_PER_ATTENDANCE);
                 })
                 .sorted(Comparator.comparing(DaySummaryDto::date))
                 .collect(Collectors.toList());
     }
 
-
     /**
      * Подготовка данных для отображения календаря.
+     * Один запрос в БД, остальное считаем в памяти.
      */
     public CalendarResponseDto prepareCalendarData(Integer year, Integer month) {
         var ctx = monthContext(year, month);
-        Map<LocalDate, List<AttendanceRecordDto>> byDate = getRecordsBetween(
-                ctx.startOfMonth(), ctx.endOfMonth())
-                .stream()
+
+        var records = getRecordsBetween(ctx.startOfMonth(), ctx.endOfMonth());
+
+        Map<LocalDate, List<AttendanceRecordDto>> byDate = records.stream()
                 .collect(Collectors.groupingBy(AttendanceRecordDto::visitDate));
 
         List<List<DayCellDto>> weeks = buildCalendarGrid(ctx.year(), ctx.month(), byDate);
-        var attendedCount = byDate.values().stream()
-                .flatMap(Collection::stream)
-                .filter(AttendanceRecordDto::attended)
+
+        long attendedCount = records.stream()
+                .filter(r -> Boolean.TRUE.equals(r.attended()))
                 .count();
 
-        // рассчитываем суммы
-        var totalWithoutTax = calculateTotalCost(ctx.startOfMonth(), ctx.endOfMonth());
-        var totalWithTax    = totalWithoutTax - TAX_AMOUNT; // если налог вычитается
-        var potentialProfit = calculatePotentialProfit(ctx.startOfMonth(), ctx.endOfMonth());
-        var totalCost = totalWithTax + potentialProfit;
-
+        int totalWithoutTax = Math.toIntExact(attendedCount * COST_PER_ATTENDANCE);
+        int totalWithTax = Math.max(0, totalWithoutTax - TAX_AMOUNT); // не уходим в минус
+        int potentialProfit = calculateFutureIncome(records);
+        int totalCost = totalWithTax + potentialProfit;
 
         return CalendarResponseDto.builder()
                 .year(ctx.year())
@@ -163,7 +170,6 @@ public class CalendarService {
                 .totalCost(totalCost)
                 .build();
     }
-
 
     private static MonthContext monthContext(Integer year, Integer month) {
         var now = LocalDate.now();
@@ -199,4 +205,14 @@ public class CalendarService {
         }
         return map;
     }
+
+    private static int calculateFutureIncome(List<AttendanceRecordDto> records) {
+        var today = LocalDate.now();
+        long future = records.stream()
+                .filter(r -> !Boolean.TRUE.equals(r.attended()) && !r.visitDate().isBefore(today))
+                .count();
+        return Math.toIntExact(future * COST_PER_ATTENDANCE);
+    }
+
+    private record MonthContext(int year, int month, LocalDate startOfMonth, LocalDate endOfMonth) {}
 }
