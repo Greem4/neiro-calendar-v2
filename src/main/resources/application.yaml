@@ -1,6 +1,7 @@
 jwt:
   secret: ${JWT_SECRET}
   ttl-min: 43200
+  clock-skew-sec: 400
 
 spring:
 

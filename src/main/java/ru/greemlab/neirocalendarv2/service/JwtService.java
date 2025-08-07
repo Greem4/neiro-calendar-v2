@@ -1,5 +1,7 @@
 package ru.greemlab.neirocalendarv2.service;
 
+import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.SignatureAlgorithm;
 import io.jsonwebtoken.security.Keys;
@@ -20,40 +22,52 @@ public class JwtService {
     private final SecretKey key;
     @Getter
     private final long ttlMinutes;
-
-
+    private final long clockSkewSeconds;
 
     public JwtService(
             @Value("${jwt.secret}") String secret,
-            @Value("${jwt.ttl-min}") long ttlMinutes
+            @Value("${jwt.ttl-min}") long ttlMinutes,
+            @Value("${jwt.clock-skew-sec}") long clockSkewSeconds
     ) {
         this.key = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
         this.ttlMinutes = ttlMinutes;
+        this.clockSkewSeconds = clockSkewSeconds;
     }
 
     @PostConstruct
     void checkSecret() {
-        if (key == null) {
-            throw new IllegalStateException("Secret key is null");
+        // HS256 требует минимум 256 бит (32 байта)
+        if (key == null || key.getEncoded() == null || key.getEncoded().length < 32) {
+            throw new IllegalStateException("JWT secret must be at least 32 bytes for HS256");
         }
     }
 
     public String generateToken(String username) {
-        var now = Instant.now();
+        Instant now = Instant.now();
         return Jwts.builder()
                 .setSubject(username)
                 .setIssuedAt(Date.from(now))
                 .setExpiration(Date.from(now.plus(ttlMinutes, ChronoUnit.MINUTES)))
-                .signWith(key,  SignatureAlgorithm.HS256)
+                .signWith(key, SignatureAlgorithm.HS256)
                 .compact();
     }
 
+    public boolean validateToken(String token) throws JwtException {
+        // выбросит JwtException при любой проблеме (подпись, формат, срок)
+        parseClaims(token);
+        return true;
+    }
+
     public String extractUsername(String token) {
+        return parseClaims(token).getSubject();
+    }
+
+    private Claims parseClaims(String token) {
         return Jwts.parserBuilder()
                 .setSigningKey(key)
+                .setAllowedClockSkewSeconds(clockSkewSeconds)
                 .build()
                 .parseClaimsJws(token)
-                .getBody()
-                .getSubject();
+                .getBody();
     }
 }
