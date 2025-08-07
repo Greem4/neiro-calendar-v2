@@ -96,28 +96,6 @@ public class CalendarService {
     }
 
     /**
-     * Общая стоимость посещений за период (учитываются только явки).
-     */
-    public int calculateTotalCost(LocalDate start, LocalDate end) {
-        long count = getRecordsBetween(start, end).stream()
-                .filter(r -> Boolean.TRUE.equals(r.attended()))
-                .count();
-        return Math.toIntExact(count * COST_PER_ATTENDANCE);
-    }
-
-    /**
-     * Потенциальный доход вперёд: только будущие незакрытые визиты
-     * (attended != true && дата >= сегодня).
-     */
-    public int calculatePotentialProfit(LocalDate start, LocalDate end) {
-        var today = LocalDate.now();
-        long future = getRecordsBetween(start, end).stream()
-                .filter(r -> !Boolean.TRUE.equals(r.attended()) && !r.visitDate().isBefore(today))
-                .count();
-        return Math.toIntExact(future * COST_PER_ATTENDANCE);
-    }
-
-    /**
      * Ежедневные сводки: число визитов и заработок по дню.
      */
     public List<DaySummaryDto> getDailySummaries(LocalDate start, LocalDate end) {
