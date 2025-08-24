@@ -1,5 +1,5 @@
 services:
-  neiro_db:
+  db:
     image: postgres:17-alpine
     container_name: neiro-calendar-db
     environment:
@@ -12,9 +12,15 @@ services:
       - ./neiro_pg_data:/var/lib/postgresql/data
       - ./neiro_postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     ports:
-      - "5432:5432"
+      - "5435:5432"
     networks:
       - app_network
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${DB_USER} -d neiro_calendar_db" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
 networks:
   app_network:

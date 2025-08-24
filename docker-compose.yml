@@ -1,7 +1,7 @@
 services:
   db:
     image: postgres:17-alpine
-    container_name: neiro_calendar
+    container_name: neiro-calendar-db
     environment:
       POSTGRES_USER: ${DB_USER}
       POSTGRES_PASSWORD: ${DB_PASS}
@@ -33,6 +33,7 @@ services:
       DB_URL: ${DB_URL}
       DB_USER: ${DB_USER}
       DB_PASS: ${DB_PASS}
+      JWT_SECRET: ${JWT_SECRET}
       TZ: Europe/Moscow
     ports:
       - "8085:8080"
