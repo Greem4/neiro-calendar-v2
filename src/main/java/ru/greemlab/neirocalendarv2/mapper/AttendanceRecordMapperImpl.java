@@ -19,17 +19,4 @@ public class AttendanceRecordMapperImpl implements AttendanceRecordMapper {
                 entity.getAttended()
         );
     }
-
-    @Override
-    public AttendanceRecord toEntity(AttendanceRecordDto dto) {
-        if (dto == null) {
-            return null;
-        }
-        var record = new AttendanceRecord();
-        record.setId(dto.id());
-        record.setPersonName(dto.personName());
-        record.setVisitDate(dto.visitDate());
-        record.setAttended(Boolean.TRUE.equals(dto.attended()));
-        return record;
-    }
 }

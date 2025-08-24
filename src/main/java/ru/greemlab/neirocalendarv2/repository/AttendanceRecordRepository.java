@@ -7,6 +7,7 @@ import ru.greemlab.neirocalendarv2.domain.entity.AttendanceRecord;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * Репозиторий для работы с таблицей "attendance_records".
@@ -14,15 +15,23 @@ import java.util.List;
  * save, findAll, findById, delete и др.
  */
 public interface AttendanceRecordRepository extends JpaRepository<AttendanceRecord, Long> {
-    /**
-     * Возвращает записи в диапазоне дат (включительно), отсортированные по дате и ID.
-     */
+
     @Query("""
             SELECT r
-              FROM AttendanceRecord r
-             WHERE r.visitDate BETWEEN :start AND :end
-             ORDER BY r.visitDate, r.id
+            FROM AttendanceRecord r
+            WHERE r.user.id = :userId
+            AND r.visitDate BETWEEN :start AND :end
+            ORDER BY r.visitDate, r.id
             """)
-    List<AttendanceRecord> findBetween(@Param("start") LocalDate start, @Param("end") LocalDate end);
+    List<AttendanceRecord> findBetweenForUser(@Param("userId") Long userId,
+                                              @Param("start") LocalDate start,
+                                              @Param("end") LocalDate end);
 
+    @Query("""
+            SELECT r
+            FROM AttendanceRecord r
+            WHERE r.id = :id AND r.user.id = :userId
+            """)
+    Optional<AttendanceRecord> findByIdAndUserId(@Param("id") Long id,
+                                                 @Param("userId") Long userId);
 }

@@ -8,5 +8,4 @@ import ru.greemlab.neirocalendarv2.domain.entity.AttendanceRecord;
  */
 public interface AttendanceRecordMapper {
     AttendanceRecordDto toDto(AttendanceRecord entity);
-    AttendanceRecord toEntity(AttendanceRecordDto dto);
 }

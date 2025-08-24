@@ -33,7 +33,6 @@ public class SecurityConfig {
 
     @Bean
     public JwtAuthFilter jwtAuthFilter(UserDetailsService uds) {
-        // Фильтр создаётся здесь, зависимости — JwtService и UserDetailsService
         return new JwtAuthFilter(jwtService, uds);
     }
 
@@ -44,7 +43,7 @@ public class SecurityConfig {
             public void addCorsMappings(@NonNull CorsRegistry registry) {
                 registry.addMapping("/**")
                         .allowedOrigins("*")
-                        .allowedMethods("GET","POST","PUT","DELETE","OPTIONS", "PATCH")
+                        .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH")
                         .allowedHeaders("*");
             }
         };
@@ -59,43 +58,25 @@ public class SecurityConfig {
                         .sessionCreationPolicy(SessionCreationPolicy.STATELESS)
                 )
                 .authorizeHttpRequests(auth -> auth
-                        // 1) Preflight CORS-запросы
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
-
-                        // 2) Swagger/OpenAPI статика
                         .requestMatchers(
                                 "/swagger-ui.html",
                                 "/swagger-ui/**",
                                 "/v3/api-docs/**",
-                                "/webjars/**"
-                        ).permitAll()
-
-                        // 3) Логин
+                                "/webjars/**")
+                        .permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/v1/auth/**").permitAll()
-
-                        .requestMatchers(HttpMethod.POST, "/api/v1/calendar/**").hasRole("ADMIN")
-                        .requestMatchers(HttpMethod.PUT, "/api/v1/calendar/**").hasRole("ADMIN")
-                        .requestMatchers(HttpMethod.PATCH, "/api/v1/calendar/**").hasRole("ADMIN")
-                        .requestMatchers(HttpMethod.DELETE, "/api/v1/calendar/**").hasRole("ADMIN")
-
-                        // 4) Публичный календарь
-                        .requestMatchers(HttpMethod.GET, "/api/v1/calendar/**").permitAll()
-
-                        // 5) Всё остальное — по JWT
+                        // всё остальное — только для аутентифицированных
                         .anyRequest().authenticated()
                 )
                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class)
-                .exceptionHandling(ex -> ex
-                        .authenticationEntryPoint(
-                                (req, res, e) -> res.sendError(HttpServletResponse.SC_UNAUTHORIZED)
-                        )
-                )
-                // при необходимости включаем стандартный CORS
+                .exceptionHandling(ex -> ex.authenticationEntryPoint(
+                        (req, res, e) -> res.sendError(HttpServletResponse.SC_UNAUTHORIZED)
+                ))
                 .cors(Customizer.withDefaults());
 
         return http.build();
     }
-
 
     @Bean
     public PasswordEncoder passwordEncoder() {

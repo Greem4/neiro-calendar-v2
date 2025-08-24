@@ -25,10 +25,8 @@ public class AuthService {
 
     public TokenResponse login(String username, String rawPassword) {
         try {
-            var auth = authManager.authenticate(
-                    new UsernamePasswordAuthenticationToken(username, rawPassword)
-            );
-            var token = jwtService.generateToken(auth.getName());
+            authManager.authenticate(new UsernamePasswordAuthenticationToken(username, rawPassword));
+            var token = jwtService.generateToken(username);
             return new TokenResponse(token, jwtService.getTtlMinutes());
         } catch (BadCredentialsException ex) {
             throw new ResponseStatusException(
