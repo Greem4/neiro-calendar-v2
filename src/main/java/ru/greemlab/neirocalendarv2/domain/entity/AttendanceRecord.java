@@ -16,12 +16,24 @@ import java.time.LocalDate;
 @Setter
 @AllArgsConstructor
 @NoArgsConstructor
-@Table(name = "attendance_records")
+@Table(
+        name = "attendance_records",
+        indexes = {
+                @Index(name = "idx_attendance_user_date",
+                        columnList = "user_id, visit_date")
+        }
+)
 public class AttendanceRecord {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
+
+    @ManyToOne( optional = false,  fetch = FetchType.LAZY )
+    @JoinColumn(name = "user_id",
+            nullable = false,
+            foreignKey = @ForeignKey(name = "fk_attendance_user"))
+    private UserAccount user;
 
     @Column(name = "person_name", nullable = false)
     private String personName;

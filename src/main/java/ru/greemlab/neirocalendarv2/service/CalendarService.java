@@ -8,18 +8,14 @@ import ru.greemlab.neirocalendarv2.domain.dto.AttendanceRecordDto;
 import ru.greemlab.neirocalendarv2.domain.dto.CalendarResponseDto;
 import ru.greemlab.neirocalendarv2.domain.dto.DayCellDto;
 import ru.greemlab.neirocalendarv2.domain.dto.DaySummaryDto;
+import ru.greemlab.neirocalendarv2.domain.entity.AttendanceRecord;
 import ru.greemlab.neirocalendarv2.mapper.AttendanceRecordMapper;
 import ru.greemlab.neirocalendarv2.repository.AttendanceRecordRepository;
 
 import java.time.LocalDate;
 import java.time.Month;
 import java.time.format.TextStyle;
-import java.util.Comparator;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
@@ -37,13 +33,20 @@ public class CalendarService {
 
     private final AttendanceRecordRepository repository;
     private final AttendanceRecordMapper mapper;
+    private final CurrentUserService currentUserService;
 
     /**
      * Создание или обновление записи посещения.
      */
     @Transactional
     public void saveAttendance(AttendanceRecordDto dto) {
-        repository.save(mapper.toEntity(dto));
+        var user = currentUserService.getCurrentUser();
+        var entity = new AttendanceRecord();
+        entity.setUser(user);
+        entity.setPersonName(Objects.requireNonNull(dto.personName(), "person name is required"));
+        entity.setVisitDate(Objects.requireNonNull(dto.visitDate(), "visit date is required"));
+        entity.setAttended(Boolean.TRUE.equals(dto.attended()));
+        repository.save(entity);
     }
 
     /**
@@ -51,7 +54,10 @@ public class CalendarService {
      */
     @Transactional
     public void deleteAttendance(Long id) {
-        repository.deleteById(id);
+        var user = currentUserService.getCurrentUser();
+        var record = repository.findByIdAndUserId(id, user.getId())
+                .orElseThrow(() -> new IllegalArgumentException("Attendance not found or not yours: " + id));
+        repository.delete(record);
     }
 
     /**
@@ -59,7 +65,8 @@ public class CalendarService {
      */
     @Transactional
     public void updateAttendance(Long id, boolean attended) {
-        var record = repository.findById(id)
+        var user = currentUserService.getCurrentUser();
+        var record = repository.findByIdAndUserId(id, user.getId())
                 .orElseThrow(() -> new IllegalArgumentException("Attendance not found: " + id));
         record.setAttended(attended);
         repository.save(record);
@@ -71,6 +78,8 @@ public class CalendarService {
      */
     @Transactional
     public void initMonthlySchedule(String person, LocalDate startDate) {
+        var user = currentUserService.getCurrentUser();
+
         var endOfMonth = startDate.withDayOfMonth(startDate.lengthOfMonth());
         var monthStart = startDate.withDayOfMonth(1);
 
@@ -81,7 +90,12 @@ public class CalendarService {
 
         for (LocalDate d = startDate; !d.isAfter(endOfMonth); d = d.plusWeeks(1)) {
             if (!existingDates.contains(d)) {
-                saveAttendance(new AttendanceRecordDto(null, person, d, false));
+                var record = new AttendanceRecord();
+                record.setUser(user);
+                record.setPersonName(person);
+                record.setVisitDate(d);
+                record.setAttended(false);
+                repository.save(record);
             }
         }
     }
@@ -90,7 +104,8 @@ public class CalendarService {
      * Получить записи между датами включительно.
      */
     public List<AttendanceRecordDto> getRecordsBetween(LocalDate start, LocalDate end) {
-        return repository.findBetween(start, end).stream()
+        var user = currentUserService.getCurrentUser();
+        return repository.findBetweenForUser(user.getId(), start, end).stream()
                 .map(mapper::toDto)
                 .collect(Collectors.toList());
     }
@@ -192,5 +207,7 @@ public class CalendarService {
         return Math.toIntExact(future * COST_PER_ATTENDANCE);
     }
 
-    private record MonthContext(int year, int month, LocalDate startOfMonth, LocalDate endOfMonth) {}
+    private record MonthContext(int year, int month, LocalDate startOfMonth,
+                                LocalDate endOfMonth) {
+    }
 }
