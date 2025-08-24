@@ -4,10 +4,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import ru.greemlab.neirocalendarv2.domain.dto.AttendanceRecordDto;
-import ru.greemlab.neirocalendarv2.domain.dto.CalendarResponseDto;
-import ru.greemlab.neirocalendarv2.domain.dto.DayCellDto;
-import ru.greemlab.neirocalendarv2.domain.dto.DaySummaryDto;
+import ru.greemlab.neirocalendarv2.domain.dto.*;
 import ru.greemlab.neirocalendarv2.domain.entity.AttendanceRecord;
 import ru.greemlab.neirocalendarv2.mapper.AttendanceRecordMapper;
 import ru.greemlab.neirocalendarv2.repository.AttendanceRecordRepository;
@@ -19,9 +16,6 @@ import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
-/**
- * Сервис для работы с календарём посещений и формирования финансовых отчётов.
- */
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -35,23 +29,17 @@ public class CalendarService {
     private final AttendanceRecordMapper mapper;
     private final CurrentUserService currentUserService;
 
-    /**
-     * Создание или обновление записи посещения.
-     */
     @Transactional
     public void saveAttendance(AttendanceRecordDto dto) {
         var user = currentUserService.getCurrentUser();
         var entity = new AttendanceRecord();
         entity.setUser(user);
-        entity.setPersonName(Objects.requireNonNull(dto.personName(), "person name is required"));
-        entity.setVisitDate(Objects.requireNonNull(dto.visitDate(), "visit date is required"));
+        entity.setPersonName(Objects.requireNonNull(dto.personName(), "personName is required"));
+        entity.setVisitDate(Objects.requireNonNull(dto.visitDate(), "visitDate is required"));
         entity.setAttended(Boolean.TRUE.equals(dto.attended()));
         repository.save(entity);
     }
 
-    /**
-     * Удаление записи по идентификатору.
-     */
     @Transactional
     public void deleteAttendance(Long id) {
         var user = currentUserService.getCurrentUser();
@@ -60,9 +48,6 @@ public class CalendarService {
         repository.delete(record);
     }
 
-    /**
-     * Обновление статуса посещения.
-     */
     @Transactional
     public void updateAttendance(Long id, boolean attended) {
         var user = currentUserService.getCurrentUser();
@@ -72,10 +57,6 @@ public class CalendarService {
         repository.save(record);
     }
 
-    /**
-     * Создаёт пустые записи на весь месяц с интервалом 1 неделя.
-     * Защита от дублей по (person, date) в пределах месяца.
-     */
     @Transactional
     public void initMonthlySchedule(String person, LocalDate startDate) {
         var user = currentUserService.getCurrentUser();
@@ -83,9 +64,10 @@ public class CalendarService {
         var endOfMonth = startDate.withDayOfMonth(startDate.lengthOfMonth());
         var monthStart = startDate.withDayOfMonth(1);
 
-        Set<LocalDate> existingDates = getRecordsBetween(monthStart, endOfMonth).stream()
-                .filter(r -> person.equals(r.personName()))
-                .map(AttendanceRecordDto::visitDate)
+        // уже существующие даты для этой связки (user + personName)
+        Set<LocalDate> existingDates = repository.findBetweenForUser(user.getId(), monthStart, endOfMonth).stream()
+                .filter(r -> person.equals(r.getPersonName()))
+                .map(AttendanceRecord::getVisitDate)
                 .collect(Collectors.toSet());
 
         for (LocalDate d = startDate; !d.isAfter(endOfMonth); d = d.plusWeeks(1)) {
@@ -100,19 +82,13 @@ public class CalendarService {
         }
     }
 
-    /**
-     * Получить записи между датами включительно.
-     */
     public List<AttendanceRecordDto> getRecordsBetween(LocalDate start, LocalDate end) {
         var user = currentUserService.getCurrentUser();
         return repository.findBetweenForUser(user.getId(), start, end).stream()
                 .map(mapper::toDto)
-                .collect(Collectors.toList());
+                .toList();
     }
 
-    /**
-     * Ежедневные сводки: число визитов и заработок по дню.
-     */
     public List<DaySummaryDto> getDailySummaries(LocalDate start, LocalDate end) {
         return getRecordsBetween(start, end).stream()
                 .collect(Collectors.groupingBy(AttendanceRecordDto::visitDate))
@@ -125,7 +101,7 @@ public class CalendarService {
                     return new DaySummaryDto(e.getKey(), visits, attended, attended * COST_PER_ATTENDANCE);
                 })
                 .sorted(Comparator.comparing(DaySummaryDto::date))
-                .collect(Collectors.toList());
+                .toList();
     }
 
     /**
@@ -185,15 +161,15 @@ public class CalendarService {
                             var inMonth = date.getMonthValue() == month;
                             return new DayCellDto(date, inMonth, map.getOrDefault(date, List.of()));
                         })
-                        .collect(Collectors.toList())
+                        .toList()
                 )
-                .collect(Collectors.toList());
+                .toList();
     }
 
     private LinkedHashMap<Integer, String> monthNames() {
         LinkedHashMap<Integer, String> map = new LinkedHashMap<>();
         for (Month m : Month.values()) {
-            var name = m.getDisplayName(TextStyle.FULL_STANDALONE, Locale.forLanguageTag("ru-RU"));
+            var name = m.getDisplayName(TextStyle.FULL_STANDALONE, java.util.Locale.forLanguageTag("ru-RU"));
             map.put(m.getValue(), Character.toUpperCase(name.charAt(0)) + name.substring(1));
         }
         return map;

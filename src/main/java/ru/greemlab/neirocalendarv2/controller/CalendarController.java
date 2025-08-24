@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import ru.greemlab.neirocalendarv2.domain.dto.AddRecordsRequest;
+import ru.greemlab.neirocalendarv2.domain.dto.AttendanceRecordDto;
 import ru.greemlab.neirocalendarv2.domain.dto.CalendarResponseDto;
 import ru.greemlab.neirocalendarv2.domain.dto.DaySummaryDto;
 import ru.greemlab.neirocalendarv2.domain.dto.UpdateAttendanceRequest;
@@ -54,6 +55,12 @@ public class CalendarController {
     public void addAttendance(@ModelAttribute AddRecordsRequest req) {
         log.info("Create lessons for '{}', starting {}", req.personName(), req.startDate());
         calendarService.initMonthlySchedule(req.personName(), req.startDate());
+    }
+
+    @PostMapping("/records")
+    @Operation(summary = "Добавляет только одну запись (только свои записи)")
+    public void createSingle(@RequestBody AttendanceRecordDto body) {
+        calendarService.saveAttendance(body);
     }
 
     @PatchMapping("/{id}")
